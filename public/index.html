@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Phantom — Encrypted ephemeral team chat. Messages self-destruct. Zero logs.">
+  <meta name="robots" content="noindex, nofollow">
+  <title>PHANTOM — Encrypted Chat</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <!-- Animated background grid -->
+  <div class="bg-grid" aria-hidden="true"></div>
+  <div class="bg-glow" aria-hidden="true"></div>
+
+  <!-- ═══════════ LOGIN SCREEN ═══════════ -->
+  <div id="login-screen" class="screen active">
+    <div class="login-card">
+      <div class="logo-section">
+        <div class="logo-ghost">
+          <svg viewBox="0 0 64 64" class="ghost-svg" aria-hidden="true">
+            <defs>
+              <linearGradient id="ghost-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stop-color="#00e5ff"/>
+                <stop offset="100%" stop-color="#7c4dff"/>
+              </linearGradient>
+            </defs>
+            <path d="M32 4C18.7 4 8 14.7 8 28v28l6-6 6 6 6-6 6 6 6-6 6 6 6-6 6 6V28C56 14.7 45.3 4 32 4z" fill="url(#ghost-grad)" opacity="0.9"/>
+            <circle cx="24" cy="26" r="4" fill="#0a0a12"/>
+            <circle cx="40" cy="26" r="4" fill="#0a0a12"/>
+          </svg>
+        </div>
+        <h1 class="logo-title">PHANTOM</h1>
+        <p class="logo-subtitle">Encrypted &bull; Ephemeral &bull; Untraceable</p>
+      </div>
+
+      <form id="login-form" autocomplete="off">
+        <div class="form-group">
+          <label for="room-input">Room Code</label>
+          <div class="input-row">
+            <input 
+              type="text" 
+              id="room-input" 
+              placeholder="e.g. team-alpha-7"
+              maxlength="50"
+              required
+              spellcheck="false"
+              autocomplete="off"
+            >
+            <button type="button" id="gen-room-btn" class="btn-icon" title="Generate random code">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="2" y="2" width="8" height="8" rx="1"/>
+                <rect x="14" y="2" width="8" height="8" rx="1"/>
+                <rect x="2" y="14" width="8" height="8" rx="1"/>
+                <rect x="14" y="14" width="8" height="8" rx="1"/>
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="passphrase-input">Secret Passphrase</label>
+          <div class="input-row">
+            <input 
+              type="password" 
+              id="passphrase-input" 
+              placeholder="Shared team secret..."
+              minlength="4"
+              required
+              autocomplete="off"
+            >
+            <button type="button" id="toggle-pass-btn" class="btn-icon" title="Toggle visibility">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" id="eye-icon">
+                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                <circle cx="12" cy="12" r="3"/>
+              </svg>
+            </button>
+          </div>
+          <small class="form-hint">Everyone in the room needs the same passphrase</small>
+        </div>
+
+        <div class="form-group">
+          <label for="nickname-input">Your Alias</label>
+          <input 
+            type="text" 
+            id="nickname-input" 
+            placeholder="Anonymous"
+            maxlength="20"
+            spellcheck="false"
+            autocomplete="off"
+          >
+        </div>
+
+        <button type="submit" id="connect-btn" class="btn-primary">
+          <span class="btn-text">CONNECT</span>
+          <span class="btn-loading" aria-hidden="true"></span>
+        </button>
+
+        <div id="login-error" class="login-error" role="alert"></div>
+      </form>
+
+      <div class="security-badges">
+        <span class="badge">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
+          AES-256
+        </span>
+        <span class="badge">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+          10min TTL
+        </span>
+        <span class="badge">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+          Zero Logs
+        </span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════ CHAT SCREEN ═══════════ -->
+  <div id="chat-screen" class="screen">
+    <header class="chat-header">
+      <div class="header-left">
+        <div class="room-badge">
+          <span class="room-dot pulse"></span>
+          <span id="room-name" class="room-name">—</span>
+        </div>
+        <div class="user-count-badge">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
+          <span id="user-count">0</span>
+        </div>
+      </div>
+      <div class="header-right">
+        <button id="panic-btn" class="btn-panic" title="PANIC: Clear everything and disconnect (Esc)">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+          <span>PANIC</span>
+        </button>
+      </div>
+    </header>
+
+    <!-- Window blur overlay -->
+    <div id="blur-overlay" class="blur-overlay">
+      <div class="blur-overlay-content">
+        <svg viewBox="0 0 24 24" width="48" height="48" fill="none" stroke="currentColor" stroke-width="1.5">
+          <rect x="3" y="11" width="18" height="11" rx="2"/>
+          <path d="M7 11V7a5 5 0 0110 0v4"/>
+        </svg>
+        <p>MESSAGES HIDDEN</p>
+        <small>Click this window to restore</small>
+      </div>
+    </div>
+
+    <div id="messages" class="messages-container">
+      <div class="messages-empty" id="messages-empty">
+        <div class="empty-icon">👻</div>
+        <p>No messages yet</p>
+        <small>Messages will self-destruct in 10 minutes</small>
+      </div>
+    </div>
+
+    <div class="chat-footer">
+      <div id="typing-indicator" class="typing-indicator hidden">
+        <span class="typing-dots"><span></span><span></span><span></span></span>
+        <span>Someone is typing...</span>
+      </div>
+      <div class="input-area">
+        <div class="input-wrapper">
+          <div class="cipher-input-display" id="cipher-display" aria-hidden="true"></div>
+          <input 
+            type="text" 
+            id="message-input" 
+            placeholder="Type a message..."
+            maxlength="500"
+            autocomplete="off"
+            spellcheck="false"
+          >
+        </div>
+        <button id="send-btn" class="btn-send" title="Send (Enter)">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="22" y1="2" x2="11" y2="13"/>
+            <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+          </svg>
+        </button>
+      </div>
+      <div class="input-meta">
+        <span class="destruction-note">
+          <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+          Auto-destruct in 10 min
+        </span>
+      </div>
+    </div>
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>
