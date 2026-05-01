@@ -1,10 +1,10 @@
 /**
  * PHANTOM Chat — Signaling Server
- * 
+ *
  * This server does TWO things:
  * 1. Serves static files from /public
  * 2. Manages WebSocket rooms for message relay
- * 
+ *
  * IMPORTANT: The server NEVER sees message content.
  * All payloads are encrypted client-side with AES-256-GCM.
  * The server only knows room IDs and user connection metadata.
@@ -18,7 +18,7 @@ const crypto = require('crypto');
 const { WebSocketServer } = require('ws');
 
 // ───────────────────────────────────────────────
-// Static file server (no Express needed)
+// Static file server
 // ───────────────────────────────────────────────
 
 const MIME_TYPES = {
@@ -34,22 +34,42 @@ const MIME_TYPES = {
 
 const PUBLIC_DIR = path.join(__dirname, 'public');
 
+function getLocalIP() {
+  const interfaces = os.networkInterfaces();
+  for (const name of Object.keys(interfaces)) {
+    for (const iface of interfaces[name]) {
+      if (iface.family === 'IPv4' && !iface.internal) return iface.address;
+    }
+  }
+  return 'localhost';
+}
+
 const server = http.createServer((req, res) => {
-  // Security headers
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'DENY');
   res.setHeader('Referrer-Policy', 'no-referrer');
 
-  // Parse the URL pathname (ignore query strings)
   const urlPath = new URL(req.url, `http://${req.headers.host}`).pathname;
 
-  // Determine which file to serve
-  const requestedFile = (urlPath === '/' || urlPath === '') ? 'index.html' : urlPath;
+  // ── API: Server status (no sensitive data) ──
+  if (urlPath === '/api/status') {
+    let totalUsers = 0;
+    for (const room of rooms.values()) totalUsers += room.size;
+    res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+    res.end(JSON.stringify({
+      status: 'ok',
+      localIP: getLocalIP(),
+      port: PORT,
+      activeRooms: rooms.size,
+      totalUsers,
+      uptime: Math.floor(process.uptime()),
+    }));
+    return;
+  }
 
-  // Resolve and sanitize the full path
+  const requestedFile = (urlPath === '/' || urlPath === '') ? 'index.html' : urlPath;
   const filePath = path.resolve(PUBLIC_DIR, '.' + path.sep + requestedFile.replace(/^\/+/, ''));
 
-  // Prevent directory traversal
   if (!filePath.startsWith(PUBLIC_DIR)) {
     res.writeHead(403);
     res.end('Forbidden');
@@ -61,15 +81,11 @@ const server = http.createServer((req, res) => {
 
   fs.readFile(filePath, (err, content) => {
     if (err) {
-      console.error(`[404] ${req.url} -> ${filePath}`);
       res.writeHead(404);
       res.end('Not Found');
       return;
     }
-    res.writeHead(200, {
-      'Content-Type': contentType,
-      'Cache-Control': 'no-store', // Never cache (privacy)
-    });
+    res.writeHead(200, { 'Content-Type': contentType, 'Cache-Control': 'no-store' });
     res.end(content);
   });
 });
@@ -107,7 +123,6 @@ function removeUserFromRoom(userId, roomId) {
 
   if (room.size === 0) {
     rooms.delete(roomId);
-    // Clear any existing timer
     if (roomTimers.has(roomId)) {
       clearTimeout(roomTimers.get(roomId));
       roomTimers.delete(roomId);
@@ -116,15 +131,15 @@ function removeUserFromRoom(userId, roomId) {
     broadcast(roomId, {
       type: 'user-left',
       userCount: room.size,
+      leftId: userId,
     });
   }
 }
 
 wss.on('connection', (ws) => {
-  let userId = crypto.randomUUID();
+  const userId = crypto.randomUUID();
   let currentRoom = null;
 
-  // Send the assigned user ID
   ws.send(JSON.stringify({ type: 'welcome', userId }));
 
   ws.on('message', (raw) => {
@@ -139,15 +154,10 @@ wss.on('connection', (ws) => {
             return;
           }
 
-          // Leave current room if in one
-          if (currentRoom) {
-            removeUserFromRoom(userId, currentRoom);
-          }
+          if (currentRoom) removeUserFromRoom(userId, currentRoom);
 
-          // Create room if it doesn't exist
-          if (!rooms.has(roomId)) {
-            rooms.set(roomId, new Map());
-          }
+          const isNewRoom = !rooms.has(roomId);
+          if (!rooms.has(roomId)) rooms.set(roomId, new Map());
 
           const room = rooms.get(roomId);
 
@@ -156,27 +166,30 @@ wss.on('connection', (ws) => {
             return;
           }
 
+          // Capture peers BEFORE adding self
+          const peers = [...room.keys()];
+
           room.set(userId, ws);
           currentRoom = roomId;
 
-          // Clear room auto-destroy timer if any
           if (roomTimers.has(roomId)) {
             clearTimeout(roomTimers.get(roomId));
             roomTimers.delete(roomId);
           }
 
-          // Confirm join
           ws.send(JSON.stringify({
             type: 'joined',
             userId,
             userCount: room.size,
             room: roomId,
+            isNewRoom,
+            peers,
           }));
 
-          // Notify others
           broadcast(roomId, {
             type: 'user-joined',
             userCount: room.size,
+            peerId: userId,
           }, userId);
 
           break;
@@ -185,11 +198,10 @@ wss.on('connection', (ws) => {
         case 'message': {
           if (!currentRoom) return;
           if (!msg.payload || typeof msg.payload !== 'string') return;
-          if (msg.payload.length > 10000) return; // Sanity limit
+          if (msg.payload.length > 10000) return;
 
           const messageId = crypto.randomUUID();
 
-          // Relay encrypted payload — server has NO idea what's inside
           broadcast(currentRoom, {
             type: 'message',
             id: messageId,
@@ -203,51 +215,28 @@ wss.on('connection', (ws) => {
 
         case 'typing': {
           if (!currentRoom) return;
-          broadcast(currentRoom, {
-            type: 'typing',
-            from: userId,
-          }, userId);
+          broadcast(currentRoom, { type: 'typing', from: userId }, userId);
           break;
         }
 
         default:
           break;
       }
-    } catch (e) {
-      // Malformed message, ignore silently
+    } catch {
+      // Malformed message — ignore silently
     }
   });
 
-  ws.on('close', () => {
-    if (currentRoom) {
-      removeUserFromRoom(userId, currentRoom);
-    }
-  });
-
-  ws.on('error', () => {
-    if (currentRoom) {
-      removeUserFromRoom(userId, currentRoom);
-    }
-  });
+  ws.on('close', () => { if (currentRoom) removeUserFromRoom(userId, currentRoom); });
+  ws.on('error', () => { if (currentRoom) removeUserFromRoom(userId, currentRoom); });
 });
 
 // ───────────────────────────────────────────────
 // Start server
 // ───────────────────────────────────────────────
 
-function getLocalIP() {
-  const interfaces = os.networkInterfaces();
-  for (const name of Object.keys(interfaces)) {
-    for (const iface of interfaces[name]) {
-      if (iface.family === 'IPv4' && !iface.internal) {
-        return iface.address;
-      }
-    }
-  }
-  return 'localhost';
-}
+const PORT = process.env.PORT || 4002;
 
-const PORT = process.env.PORT || 4002
 server.listen(PORT, '0.0.0.0', () => {
   const localIP = getLocalIP();
   console.log('');
@@ -255,11 +244,11 @@ server.listen(PORT, '0.0.0.0', () => {
   console.log('  ║          👻 PHANTOM CHAT SERVER          ║');
   console.log('  ╠══════════════════════════════════════════╣');
   console.log(`  ║  Local:   http://localhost:${PORT}          ║`);
-  console.log(`  ║  Network: http://${localIP}:${PORT}     ║`);
+  console.log(`  ║  Network: http://${localIP}:${PORT}       ║`);
   console.log('  ║                                          ║');
   console.log('  ║  Share the Network URL with your team    ║');
   console.log('  ║  🔒 All messages are E2E encrypted      ║');
-  console.log('  ║  🗑️  Messages self-destruct in 10 min    ║');
+  console.log('  ║  🗑️  Messages self-destruct on TTL       ║');
   console.log('  ╚══════════════════════════════════════════╝');
   console.log('');
 });
