@@ -247,8 +247,7 @@ function getLocalIP() {
   return 'localhost';
 }
 
-const PORT = process.env.PORT || 3000;
-
+const PORT = process.env.PORT || 4002
 server.listen(PORT, '0.0.0.0', () => {
   const localIP = getLocalIP();
   console.log('');
